@@ -36,7 +36,7 @@ create_volume_subfolder() {
             mkdir -p $f
         fi
     done
-    cp -r /app/gogs/docker/s6/.s6-svscan.org ~/.s6-svscan
+    #cp -r /app/gogs/docker/s6/.s6-svscan.org ~/.s6-svscan
 }
 
 cleanup
