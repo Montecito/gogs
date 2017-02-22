@@ -1,7 +1,7 @@
 Gogs [![Build Status](https://travis-ci.org/gogits/gogs.svg?branch=master)](https://travis-ci.org/gogits/gogs) [![Build status](https://ci.appveyor.com/api/projects/status/b9uu5ejl933e2wlt/branch/master?svg=true)](https://ci.appveyor.com/project/Unknwon/gogs/branch/master)
 =====================
 
-Gogs (Go Git Service) 是一款极易搭建的自助 Git 服务。
+Gogs 是一款极易搭建的自助 Git 服务。
 
 ## 开发目的
 
@@ -22,9 +22,9 @@ Gogs 的目标是打造一个最简单、最快速和最轻松的方式搭建自
 - 支持反向代理子路径
 - 支持用户、组织和仓库管理系统
 - 支持添加和删除仓库协作者
-- 支持仓库和组织级别 Web 钩子（包括 Slack 集成）
+- 支持仓库和组织级别 Web 钩子（包括 Slack 和 Discord 集成）
 - 支持仓库 Git 钩子和部署密钥
-- 支持仓库工单（Issue）、合并请求（Pull Request）以及 Wiki
+- 支持仓库工单（Issue）、合并请求（Pull Request）、Wiki 和保护分支
 - 支持迁移和镜像仓库以及它的 Wiki
 - 支持在线编辑仓库文件和 Wiki
 - 支持自定义源的 Gravatar 和 Federated Avatar
@@ -32,12 +32,13 @@ Gogs 的目标是打造一个最简单、最快速和最轻松的方式搭建自
 - 支持邮件服务
 - 支持后台管理面板
 - 支持 MySQL、PostgreSQL、SQLite3、MSSQL 和 [TiDB](https://github.com/pingcap/tidb)（实验性支持） 数据库
-- 支持多语言本地化（[22 种语言]([more](https://crowdin.com/project/gogs))）
+- 支持多语言本地化（[23 种语言]([more](https://crowdin.com/project/gogs))）
 
-## 系统要求
+## 硬件要求
 
 - 最低的系统硬件要求为一个廉价的树莓派
-- 如果用于团队项目，建议使用 2 核 CPU 及 1GB 内存
+- 如果用于团队项目管理，建议使用 2 核 CPU 及 512MB 内存
+- 当团队成员大量增加时，可以考虑添加 CPU 核数，内存占用保持不变
 
 ## 浏览器支持
 

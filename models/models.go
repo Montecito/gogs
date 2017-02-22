@@ -65,8 +65,8 @@ func init() {
 		new(Watch), new(Star), new(Follow), new(Action),
 		new(Issue), new(PullRequest), new(Comment), new(Attachment), new(IssueUser),
 		new(Label), new(IssueLabel), new(Milestone),
-		new(Mirror), new(Release), new(LoginSource), new(Webhook),
-		new(UpdateTask), new(HookTask),
+		new(Mirror), new(Release), new(LoginSource), new(Webhook), new(HookTask),
+		new(ProtectBranch),
 		new(Team), new(OrgUser), new(TeamUser), new(TeamRepo),
 		new(Notice), new(EmailAddress))
 
@@ -88,8 +88,6 @@ func LoadConfigs() {
 		setting.UsePostgreSQL = true
 	case "mssql":
 		setting.UseMSSQL = true
-	case "tidb":
-		setting.UseTiDB = true
 	}
 	DbCfg.Host = sec.Key("HOST").String()
 	DbCfg.Name = sec.Key("NAME").String()
@@ -256,7 +254,6 @@ func GetStatistic() (stats Statistic) {
 	stats.Counter.Label, _ = x.Count(new(Label))
 	stats.Counter.HookTask, _ = x.Count(new(HookTask))
 	stats.Counter.Team, _ = x.Count(new(Team))
-	stats.Counter.UpdateTask, _ = x.Count(new(UpdateTask))
 	stats.Counter.Attachment, _ = x.Count(new(Attachment))
 	return
 }

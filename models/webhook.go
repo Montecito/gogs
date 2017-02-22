@@ -118,7 +118,7 @@ func (w *Webhook) AfterSet(colName string, _ xorm.Cell) {
 	case "events":
 		w.HookEvent = &HookEvent{}
 		if err = json.Unmarshal([]byte(w.Events), w.HookEvent); err != nil {
-			log.Error(3, "Unmarshal[%d]: %v", w.ID, err)
+			log.Error(3, "Unmarshal [%d]: %v", w.ID, err)
 		}
 	case "created_unix":
 		w.Created = time.Unix(w.CreatedUnix, 0).Local()
@@ -130,7 +130,7 @@ func (w *Webhook) AfterSet(colName string, _ xorm.Cell) {
 func (w *Webhook) GetSlackHook() *SlackMeta {
 	s := &SlackMeta{}
 	if err := json.Unmarshal([]byte(w.Meta), s); err != nil {
-		log.Error(4, "webhook.GetSlackHook(%d): %v", w.ID, err)
+		log.Error(2, "GetSlackHook [%d]: %v", w.ID, err)
 	}
 	return s
 }
@@ -197,8 +197,8 @@ func getWebhook(bean *Webhook) (*Webhook, error) {
 	return bean, nil
 }
 
-// GetWebhookByRepoID returns webhook of repository by given ID.
-func GetWebhookByRepoID(repoID, id int64) (*Webhook, error) {
+// GetWebhookOfRepoByID returns webhook of repository by given ID.
+func GetWebhookOfRepoByID(repoID, id int64) (*Webhook, error) {
 	return getWebhook(&Webhook{
 		ID:     id,
 		RepoID: repoID,
@@ -216,10 +216,7 @@ func GetWebhookByOrgID(orgID, id int64) (*Webhook, error) {
 // GetActiveWebhooksByRepoID returns all active webhooks of repository.
 func GetActiveWebhooksByRepoID(repoID int64) ([]*Webhook, error) {
 	webhooks := make([]*Webhook, 0, 5)
-	return webhooks, x.Find(&webhooks, &Webhook{
-		RepoID:   repoID,
-		IsActive: true,
-	})
+	return webhooks, x.Where("repo_id = ?", repoID).And("is_active = ?", true).Find(&webhooks)
 }
 
 // GetWebhooksByRepoID returns all webhooks of a repository.
@@ -292,11 +289,13 @@ type HookTaskType int
 const (
 	GOGS HookTaskType = iota + 1
 	SLACK
+	DISCORD
 )
 
 var hookTaskTypes = map[string]HookTaskType{
-	"gogs":  GOGS,
-	"slack": SLACK,
+	"gogs":    GOGS,
+	"slack":   SLACK,
+	"discord": DISCORD,
 }
 
 // ToHookTaskType returns HookTaskType by given name.
@@ -310,6 +309,8 @@ func (t HookTaskType) Name() string {
 		return "gogs"
 	case SLACK:
 		return "slack"
+	case DISCORD:
+		return "discord"
 	}
 	return ""
 }
@@ -435,29 +436,14 @@ func UpdateHookTask(t *HookTask) error {
 	return err
 }
 
-// PrepareWebhooks adds new webhooks to task queue for given payload.
-func PrepareWebhooks(repo *Repository, event HookEventType, p api.Payloader) error {
-	ws, err := GetActiveWebhooksByRepoID(repo.ID)
-	if err != nil {
-		return fmt.Errorf("GetActiveWebhooksByRepoID: %v", err)
-	}
-
-	// check if repo belongs to org and append additional webhooks
-	if repo.MustOwner().IsOrganization() {
-		// get hooks for org
-		orgws, err := GetActiveWebhooksByOrgID(repo.OwnerID)
-		if err != nil {
-			return fmt.Errorf("GetActiveWebhooksByOrgID: %v", err)
-		}
-		ws = append(ws, orgws...)
-	}
-
-	if len(ws) == 0 {
+// prepareWebhooks adds list of webhooks to task queue.
+func prepareWebhooks(repo *Repository, event HookEventType, p api.Payloader, webhooks []*Webhook) (err error) {
+	if len(webhooks) == 0 {
 		return nil
 	}
 
 	var payloader api.Payloader
-	for _, w := range ws {
+	for _, w := range webhooks {
 		switch event {
 		case HOOK_EVENT_CREATE:
 			if !w.HasCreateEvent() {
@@ -476,11 +462,14 @@ func PrepareWebhooks(repo *Repository, event HookEventType, p api.Payloader) err
 		// Use separate objects so modifcations won't be made on payload on non-Gogs type hooks.
 		switch w.HookTaskType {
 		case SLACK:
-			// FIXME: dirty fix for buggy support of Discord for Slack-type webhook.
-			// Should remove this if we want to support Discord fully as its own.
-			payloader, err = GetSlackPayload(strings.Contains(w.URL, ".discordapp.com/"), p, event, w.Meta)
+			payloader, err = GetSlackPayload(p, event, w.Meta)
 			if err != nil {
 				return fmt.Errorf("GetSlackPayload: %v", err)
+			}
+		case DISCORD:
+			payloader, err = GetDiscordPayload(p, event, w.Meta)
+			if err != nil {
+				return fmt.Errorf("GetDiscordPayload: %v", err)
 			}
 		default:
 			p.SetSecret(w.Secret)
@@ -501,6 +490,34 @@ func PrepareWebhooks(repo *Repository, event HookEventType, p api.Payloader) err
 		}
 	}
 	return nil
+}
+
+// PrepareWebhooks adds all active webhooks to task queue.
+func PrepareWebhooks(repo *Repository, event HookEventType, p api.Payloader) error {
+	webhooks, err := GetActiveWebhooksByRepoID(repo.ID)
+	if err != nil {
+		return fmt.Errorf("GetActiveWebhooksByRepoID [%d]: %v", repo.ID, err)
+	}
+
+	// check if repo belongs to org and append additional webhooks
+	if repo.MustOwner().IsOrganization() {
+		// get hooks for org
+		orgws, err := GetActiveWebhooksByOrgID(repo.OwnerID)
+		if err != nil {
+			return fmt.Errorf("GetActiveWebhooksByOrgID [%d]: %v", repo.OwnerID, err)
+		}
+		webhooks = append(webhooks, orgws...)
+	}
+	return prepareWebhooks(repo, event, p, webhooks)
+}
+
+// TestWebhook adds the test webhook matches the ID to task queue.
+func TestWebhook(repo *Repository, event HookEventType, p api.Payloader, webhookID int64) error {
+	webhook, err := GetWebhookOfRepoByID(repo.ID, webhookID)
+	if err != nil {
+		return fmt.Errorf("GetWebhookOfRepoByID [repo_id: %d, id: %d]: %v", repo.ID, webhookID, err)
+	}
+	return prepareWebhooks(repo, event, p, []*Webhook{webhook})
 }
 
 func (t *HookTask) deliver() {
@@ -540,7 +557,7 @@ func (t *HookTask) deliver() {
 		}
 
 		// Update webhook last delivery status.
-		w, err := GetWebhookByRepoID(t.RepoID, t.HookID)
+		w, err := GetWebhookOfRepoByID(t.RepoID, t.HookID)
 		if err != nil {
 			log.Error(5, "GetWebhookByID: %v", err)
 			return

@@ -6,6 +6,8 @@ package models
 
 import (
 	"fmt"
+
+	api "github.com/gogits/go-gogs-client"
 )
 
 // Collaboration represent the relation between an individual and a repository.
@@ -27,6 +29,16 @@ func (c *Collaboration) ModeI18nKey() string {
 	default:
 		return "repo.settings.collaboration.undefined"
 	}
+}
+
+//IsCollaborator returns true if the user is a collaborator
+func (repo *Repository) IsCollaborator(uid int64) (bool, error) {
+	collaboration := &Collaboration{
+		RepoID: repo.ID,
+		UserID: uid,
+	}
+
+	return x.Get(collaboration)
 }
 
 // AddCollaborator adds new collaboration to a repository with default access mode.
@@ -77,6 +89,17 @@ type Collaborator struct {
 	Collaboration *Collaboration
 }
 
+func (c *Collaborator) APIFormat() *api.Collaborator {
+	return &api.Collaborator{
+		User: c.User.APIFormat(),
+		Permissions: api.Permission{
+			Admin: c.Collaboration.Mode >= ACCESS_MODE_ADMIN,
+			Push:  c.Collaboration.Mode >= ACCESS_MODE_WRITE,
+			Pull:  c.Collaboration.Mode >= ACCESS_MODE_READ,
+		},
+	}
+}
+
 func (repo *Repository) getCollaborators(e Engine) ([]*Collaborator, error) {
 	collaborations, err := repo.getCollaborations(e)
 	if err != nil {
@@ -103,7 +126,7 @@ func (repo *Repository) GetCollaborators() ([]*Collaborator, error) {
 }
 
 // ChangeCollaborationAccessMode sets new access mode for the collaboration.
-func (repo *Repository) ChangeCollaborationAccessMode(uid int64, mode AccessMode) error {
+func (repo *Repository) ChangeCollaborationAccessMode(userID int64, mode AccessMode) error {
 	// Discard invalid input
 	if mode <= ACCESS_MODE_NONE || mode > ACCESS_MODE_OWNER {
 		return nil
@@ -111,7 +134,7 @@ func (repo *Repository) ChangeCollaborationAccessMode(uid int64, mode AccessMode
 
 	collaboration := &Collaboration{
 		RepoID: repo.ID,
-		UserID: uid,
+		UserID: userID,
 	}
 	has, err := x.Get(collaboration)
 	if err != nil {
@@ -133,7 +156,23 @@ func (repo *Repository) ChangeCollaborationAccessMode(uid int64, mode AccessMode
 
 	if _, err = sess.Id(collaboration.ID).AllCols().Update(collaboration); err != nil {
 		return fmt.Errorf("update collaboration: %v", err)
-	} else if _, err = sess.Exec("UPDATE access SET mode = ? WHERE user_id = ? AND repo_id = ?", mode, uid, repo.ID); err != nil {
+	}
+
+	access := Access{
+		UserID: userID,
+		RepoID: repo.ID,
+	}
+	has, err = sess.Get(access)
+	if err != nil {
+		return fmt.Errorf("get access record: %v", err)
+	}
+	if has {
+		_, err = sess.Exec("UPDATE access SET mode = ? WHERE user_id = ? AND repo_id = ?", mode, userID, repo.ID)
+	} else {
+		access.Mode = mode
+		_, err = sess.Insert(access)
+	}
+	if err != nil {
 		return fmt.Errorf("update access table: %v", err)
 	}
 

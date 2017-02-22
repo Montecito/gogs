@@ -98,6 +98,7 @@ var (
 	LogInRememberDays    int
 	CookieUserName       string
 	CookieRememberName   string
+	CookieSecure         bool
 	ReverseProxyAuthUser string
 
 	// Database settings
@@ -105,16 +106,6 @@ var (
 	UseMySQL      bool
 	UsePostgreSQL bool
 	UseMSSQL      bool
-	UseTiDB       bool
-
-	// Webhook settings
-	Webhook struct {
-		QueueLength    int
-		DeliverTimeout int
-		SkipTLSVerify  bool
-		Types          []string
-		PagingNum      int
-	}
 
 	// Repository settings
 	Repository struct {
@@ -126,6 +117,7 @@ var (
 		PreferredLicenses        []string
 		DisableHTTPGit           bool `ini:"DISABLE_HTTP_GIT"`
 		EnableLocalPathMigration bool
+		CommitsFetchConcurrency  int
 
 		// Repository editor settings
 		Editor struct {
@@ -144,6 +136,15 @@ var (
 	}
 	RepoRootPath string
 	ScriptType   string
+
+	// Webhook settings
+	Webhook struct {
+		Types          []string
+		QueueLength    int
+		DeliverTimeout int
+		SkipTLSVerify  bool
+		PagingNum      int
+	}
 
 	// Markdown sttings
 	Markdown struct {
@@ -207,6 +208,12 @@ var (
 			RunAtStart bool
 			Schedule   string
 		} `ini:"cron.check_repo_stats"`
+		RepoArchiveCleanup struct {
+			Enabled    bool
+			RunAtStart bool
+			Schedule   string
+			OlderThan  time.Duration
+		} `ini:"cron.repo_archive_cleanup"`
 	}
 
 	// Git settings
@@ -301,7 +308,7 @@ func init() {
 
 	var err error
 	if AppPath, err = execPath(); err != nil {
-		log.Fatal(4, "Fail to get app path: %v\n", err)
+		log.Fatal(2, "Fail to get app path: %v\n", err)
 	}
 
 	// Note: we don't use path.Dir here because it does not handle case
@@ -325,7 +332,7 @@ func WorkDir() (string, error) {
 
 func forcePathSeparator(path string) {
 	if strings.Contains(path, "\\") {
-		log.Fatal(4, "Do not use '\\' or '\\\\' in paths, instead, please use '/' in all places")
+		log.Fatal(2, "Do not use '\\' or '\\\\' in paths, instead, please use '/' in all places")
 	}
 }
 
@@ -347,12 +354,12 @@ func IsRunUserMatchCurrentUser(runUser string) (string, bool) {
 func NewContext() {
 	workDir, err := WorkDir()
 	if err != nil {
-		log.Fatal(4, "Fail to get work directory: %v", err)
+		log.Fatal(2, "Fail to get work directory: %v", err)
 	}
 
 	Cfg, err = ini.Load(bindata.MustAsset("conf/app.ini"))
 	if err != nil {
-		log.Fatal(4, "Fail to parse 'conf/app.ini': %v", err)
+		log.Fatal(2, "Fail to parse 'conf/app.ini': %v", err)
 	}
 
 	CustomPath = os.Getenv("GOGS_CUSTOM")
@@ -366,7 +373,7 @@ func NewContext() {
 
 	if com.IsFile(CustomConf) {
 		if err = Cfg.Append(CustomConf); err != nil {
-			log.Fatal(4, "Fail to load custom conf '%s': %v", CustomConf, err)
+			log.Fatal(2, "Fail to load custom conf '%s': %v", CustomConf, err)
 		}
 	} else {
 		log.Warn("Custom config '%s' not found, ignore this if you're running first time", CustomConf)
@@ -375,7 +382,7 @@ func NewContext() {
 
 	homeDir, err := com.HomeDir()
 	if err != nil {
-		log.Fatal(4, "Fail to get home directory: %v", err)
+		log.Fatal(2, "Fail to get home directory: %v", err)
 	}
 	homeDir = strings.Replace(homeDir, "\\", "/", -1)
 
@@ -383,7 +390,7 @@ func NewContext() {
 	forcePathSeparator(LogRootPath)
 
 	sec := Cfg.Section("server")
-	AppName = Cfg.Section("").Key("APP_NAME").MustString("Gogs: Go Git Service")
+	AppName = Cfg.Section("").Key("APP_NAME").MustString("Gogs")
 	AppUrl = sec.Key("ROOT_URL").MustString("http://localhost:3000/")
 	if AppUrl[len(AppUrl)-1] != '/' {
 		AppUrl += "/"
@@ -392,7 +399,7 @@ func NewContext() {
 	// Check if has app suburl.
 	url, err := url.Parse(AppUrl)
 	if err != nil {
-		log.Fatal(4, "Invalid ROOT_URL '%s': %s", AppUrl, err)
+		log.Fatal(2, "Invalid ROOT_URL '%s': %s", AppUrl, err)
 	}
 	// Suburl should start with '/' and end without '/', such as '/{subpath}'.
 	// This value is empty if site does not have sub-url.
@@ -411,7 +418,7 @@ func NewContext() {
 		UnixSocketPermissionRaw := sec.Key("UNIX_SOCKET_PERMISSION").MustString("666")
 		UnixSocketPermissionParsed, err := strconv.ParseUint(UnixSocketPermissionRaw, 8, 32)
 		if err != nil || UnixSocketPermissionParsed > 0777 {
-			log.Fatal(4, "Fail to parse unixSocketPermission: %s", UnixSocketPermissionRaw)
+			log.Fatal(2, "Fail to parse unixSocketPermission: %s", UnixSocketPermissionRaw)
 		}
 		UnixSocketPermission = uint32(UnixSocketPermissionParsed)
 	}
@@ -436,7 +443,7 @@ func NewContext() {
 	SSH.ServerCiphers = sec.Key("SSH_SERVER_CIPHERS").Strings(",")
 	SSH.KeyTestPath = os.TempDir()
 	if err = Cfg.Section("server").MapTo(&SSH); err != nil {
-		log.Fatal(4, "Fail to map SSH settings: %v", err)
+		log.Fatal(2, "Fail to map SSH settings: %v", err)
 	}
 	// When disable SSH, start builtin server value is ignored.
 	if SSH.Disabled {
@@ -445,9 +452,9 @@ func NewContext() {
 
 	if !SSH.Disabled && !SSH.StartBuiltinServer {
 		if err := os.MkdirAll(SSH.RootPath, 0700); err != nil {
-			log.Fatal(4, "Fail to create '%s': %v", SSH.RootPath, err)
+			log.Fatal(2, "Fail to create '%s': %v", SSH.RootPath, err)
 		} else if err = os.MkdirAll(SSH.KeyTestPath, 0644); err != nil {
-			log.Fatal(4, "Fail to create '%s': %v", SSH.KeyTestPath, err)
+			log.Fatal(2, "Fail to create '%s': %v", SSH.KeyTestPath, err)
 		}
 	}
 
@@ -466,6 +473,7 @@ func NewContext() {
 	LogInRememberDays = sec.Key("LOGIN_REMEMBER_DAYS").MustInt()
 	CookieUserName = sec.Key("COOKIE_USERNAME").String()
 	CookieRememberName = sec.Key("COOKIE_REMEMBER_NAME").String()
+	CookieSecure = sec.Key("COOKIE_SECURE").MustBool(false)
 	ReverseProxyAuthUser = sec.Key("REVERSE_PROXY_AUTHENTICATION_USER").MustString("X-WEBAUTH-USER")
 
 	sec = Cfg.Section("attachment")
@@ -501,7 +509,7 @@ func NewContext() {
 	if InstallLock {
 		currentUser, match := IsRunUserMatchCurrentUser(RunUser)
 		if !match {
-			log.Fatal(4, "Expect user '%s' but current user is: %s", RunUser, currentUser)
+			log.Fatal(2, "Expect user '%s' but current user is: %s", RunUser, currentUser)
 		}
 	}
 
@@ -518,11 +526,11 @@ func NewContext() {
 	}
 	ScriptType = sec.Key("SCRIPT_TYPE").MustString("bash")
 	if err = Cfg.Section("repository").MapTo(&Repository); err != nil {
-		log.Fatal(4, "Fail to map Repository settings: %v", err)
+		log.Fatal(2, "Fail to map Repository settings: %v", err)
 	} else if err = Cfg.Section("repository.editor").MapTo(&Repository.Editor); err != nil {
-		log.Fatal(4, "Fail to map Repository.Editor settings: %v", err)
+		log.Fatal(2, "Fail to map Repository.Editor settings: %v", err)
 	} else if err = Cfg.Section("repository.upload").MapTo(&Repository.Upload); err != nil {
-		log.Fatal(4, "Fail to map Repository.Upload settings: %v", err)
+		log.Fatal(2, "Fail to map Repository.Upload settings: %v", err)
 	}
 
 	if !filepath.IsAbs(Repository.Upload.TempPath) {
@@ -570,21 +578,23 @@ func NewContext() {
 	}
 
 	if err = Cfg.Section("http").MapTo(&HTTP); err != nil {
-		log.Fatal(4, "Fail to map HTTP settings: %v", err)
+		log.Fatal(2, "Fail to map HTTP settings: %v", err)
+	} else if err = Cfg.Section("webhook").MapTo(&Webhook); err != nil {
+		log.Fatal(2, "Fail to map Webhook settings: %v", err)
 	} else if err = Cfg.Section("markdown").MapTo(&Markdown); err != nil {
-		log.Fatal(4, "Fail to map Markdown settings: %v", err)
+		log.Fatal(2, "Fail to map Markdown settings: %v", err)
 	} else if err = Cfg.Section("admin").MapTo(&Admin); err != nil {
-		log.Fatal(4, "Fail to map Admin settings: %v", err)
+		log.Fatal(2, "Fail to map Admin settings: %v", err)
 	} else if err = Cfg.Section("cron").MapTo(&Cron); err != nil {
-		log.Fatal(4, "Fail to map Cron settings: %v", err)
+		log.Fatal(2, "Fail to map Cron settings: %v", err)
 	} else if err = Cfg.Section("git").MapTo(&Git); err != nil {
-		log.Fatal(4, "Fail to map Git settings: %v", err)
+		log.Fatal(2, "Fail to map Git settings: %v", err)
 	} else if err = Cfg.Section("mirror").MapTo(&Mirror); err != nil {
-		log.Fatal(4, "Fail to map Mirror settings: %v", err)
+		log.Fatal(2, "Fail to map Mirror settings: %v", err)
 	} else if err = Cfg.Section("api").MapTo(&API); err != nil {
-		log.Fatal(4, "Fail to map API settings: %v", err)
+		log.Fatal(2, "Fail to map API settings: %v", err)
 	} else if err = Cfg.Section("ui").MapTo(&UI); err != nil {
-		log.Fatal(4, "Fail to map UI settings: %v", err)
+		log.Fatal(2, "Fail to map UI settings: %v", err)
 	}
 
 	if Mirror.DefaultInterval <= 0 {
@@ -651,7 +661,7 @@ func newLogService() {
 		mode = strings.ToLower(strings.TrimSpace(mode))
 		sec, err := Cfg.GetSection("log." + mode)
 		if err != nil {
-			log.Fatal(4, "Unknown logger mode: %s", mode)
+			log.Fatal(2, "Unknown logger mode: %s", mode)
 		}
 
 		validLevels := []string{"trace", "info", "warn", "error", "fatal"}
@@ -676,7 +686,7 @@ func newLogService() {
 		case log.FILE:
 			logPath := path.Join(LogRootPath, "gogs.log")
 			if err = os.MkdirAll(path.Dir(logPath), os.ModePerm); err != nil {
-				log.Fatal(4, "Fail to create log directory '%s': %v", path.Dir(logPath), err)
+				log.Fatal(2, "Fail to create log directory '%s': %v", path.Dir(logPath), err)
 			}
 
 			LogConfigs[i] = log.FileConfig{
@@ -719,7 +729,7 @@ func newCacheService() {
 	case "redis", "memcache":
 		CacheConn = strings.Trim(Cfg.Section("cache").Key("HOST").String(), "\" ")
 	default:
-		log.Fatal(4, "Unknown cache adapter: %s", CacheAdapter)
+		log.Fatal(2, "Unknown cache adapter: %s", CacheAdapter)
 	}
 
 	log.Info("Cache Service Enabled")
@@ -781,11 +791,13 @@ func newMailService() {
 	}
 	MailService.From = sec.Key("FROM").MustString(MailService.User)
 
-	parsed, err := mail.ParseAddress(MailService.From)
-	if err != nil {
-		log.Fatal(4, "Invalid mailer.FROM (%s): %v", MailService.From, err)
+	if len(MailService.From) > 0 {
+		parsed, err := mail.ParseAddress(MailService.From)
+		if err != nil {
+			log.Fatal(2, "Invalid mailer.FROM (%s): %v", MailService.From, err)
+		}
+		MailService.FromEmail = parsed.Address
 	}
-	MailService.FromEmail = parsed.Address
 
 	log.Info("Mail Service Enabled")
 }
@@ -812,15 +824,6 @@ func newNotifyMailService() {
 	log.Info("Notify Mail Service Enabled")
 }
 
-func newWebhookService() {
-	sec := Cfg.Section("webhook")
-	Webhook.QueueLength = sec.Key("QUEUE_LENGTH").MustInt(1000)
-	Webhook.DeliverTimeout = sec.Key("DELIVER_TIMEOUT").MustInt(5)
-	Webhook.SkipTLSVerify = sec.Key("SKIP_TLS_VERIFY").MustBool()
-	Webhook.Types = []string{"gogs", "slack"}
-	Webhook.PagingNum = sec.Key("PAGING_NUM").MustInt(10)
-}
-
 func NewService() {
 	newService()
 }
@@ -833,5 +836,4 @@ func NewServices() {
 	newMailService()
 	newRegisterMailService()
 	newNotifyMailService()
-	newWebhookService()
 }

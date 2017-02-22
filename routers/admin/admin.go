@@ -121,7 +121,7 @@ const (
 	CLEAN_MISSING_REPOS
 	GIT_GC_REPOS
 	SYNC_SSH_AUTHORIZED_KEY
-	SYNC_REPOSITORY_UPDATE_HOOK
+	SYNC_REPOSITORY_HOOKS
 	REINIT_MISSING_REPOSITORY
 )
 
@@ -152,9 +152,9 @@ func Dashboard(ctx *context.Context) {
 		case SYNC_SSH_AUTHORIZED_KEY:
 			success = ctx.Tr("admin.dashboard.resync_all_sshkeys_success")
 			err = models.RewriteAllPublicKeys()
-		case SYNC_REPOSITORY_UPDATE_HOOK:
-			success = ctx.Tr("admin.dashboard.resync_all_update_hooks_success")
-			err = models.RewriteRepositoryUpdateHook()
+		case SYNC_REPOSITORY_HOOKS:
+			success = ctx.Tr("admin.dashboard.resync_all_hooks_success")
+			err = models.SyncRepositoryHooks()
 		case REINIT_MISSING_REPOSITORY:
 			success = ctx.Tr("admin.dashboard.reinit_missing_repos_success")
 			err = models.ReinitMissingRepositories()
@@ -199,14 +199,15 @@ func Config(ctx *context.Context) {
 	ctx.Data["DisableRouterLog"] = setting.DisableRouterLog
 	ctx.Data["RunUser"] = setting.RunUser
 	ctx.Data["RunMode"] = strings.Title(macaron.Env)
-	ctx.Data["GitVersion"] = setting.Git.Version
-	ctx.Data["RepoRootPath"] = setting.RepoRootPath
 	ctx.Data["StaticRootPath"] = setting.StaticRootPath
 	ctx.Data["LogRootPath"] = setting.LogRootPath
-	ctx.Data["ScriptType"] = setting.ScriptType
 	ctx.Data["ReverseProxyAuthUser"] = setting.ReverseProxyAuthUser
 
 	ctx.Data["SSH"] = setting.SSH
+
+	ctx.Data["RepoRootPath"] = setting.RepoRootPath
+	ctx.Data["ScriptType"] = setting.ScriptType
+	ctx.Data["Repository"] = setting.Repository
 
 	ctx.Data["Service"] = setting.Service
 	ctx.Data["DbCfg"] = models.DbCfg
@@ -227,6 +228,7 @@ func Config(ctx *context.Context) {
 	ctx.Data["DisableGravatar"] = setting.DisableGravatar
 	ctx.Data["EnableFederatedAvatar"] = setting.EnableFederatedAvatar
 
+	ctx.Data["GitVersion"] = setting.Git.Version
 	ctx.Data["Git"] = setting.Git
 
 	type logger struct {

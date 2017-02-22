@@ -94,7 +94,7 @@ func (ctx *Context) Handle(status int, title string, err error) {
 		ctx.Data["Title"] = "Page Not Found"
 	case 500:
 		ctx.Data["Title"] = "Internal Server Error"
-		log.Error(4, "%s: %v", title, err)
+		log.Error(2, "%s: %v", title, err)
 		if !setting.ProdMode || (ctx.IsSigned && ctx.User.IsAdmin) {
 			ctx.Data["ErrorMsg"] = err
 		}
@@ -112,7 +112,7 @@ func (ctx *Context) NotFound() {
 // or error context description for logging purpose of 500 server error.
 func (ctx *Context) NotFoundOrServerError(title string, errck func(error) bool, err error) {
 	if errck(err) {
-		ctx.Handle(404, title, err)
+		ctx.NotFound()
 		return
 	}
 

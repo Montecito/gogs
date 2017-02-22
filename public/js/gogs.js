@@ -212,18 +212,15 @@ function initInstall() {
     // Database type change detection.
     $("#db_type").change(function () {
         var sqliteDefault = 'data/gogs.db';
-        var tidbDefault = 'data/gogs_tidb';
 
         var dbType = $(this).val();
-        if (dbType === "SQLite3" || dbType === "TiDB") {
+        if (dbType === "SQLite3") {
             $('#sql_settings').hide();
             $('#pgsql_settings').hide();
             $('#sqlite_settings').show();
 
-            if (dbType === "SQLite3" && $('#db_path').val() == tidbDefault) {
+            if (dbType === "SQLite3") {
                 $('#db_path').val(sqliteDefault);
-            } else if (dbType === "TiDB" && $('#db_path').val() == sqliteDefault) {
-                $('#db_path').val(tidbDefault);
             }
             return;
         }
@@ -337,6 +334,18 @@ function initRepository() {
                 $($(this).data('target')).addClass('disabled');
             } else if (this.value == 'true') {
                 $($(this).data('target')).removeClass('disabled');
+            }
+        });
+    }
+
+    // Branches
+    if ($('.repository.settings.branches').length > 0) {
+        initFilterSearchDropdown('.protected-branches .dropdown');
+        $('.enable-protection').change(function () {
+            if (this.checked) {
+                $($(this).data('target')).removeClass('disabled');
+            } else {
+                $($(this).data('target')).addClass('disabled');
             }
         });
     }
@@ -533,6 +542,20 @@ function initRepository() {
                 $item.find(".bar .add").css("width", addPercent + "%");
             });
         }
+
+        $('.diff-file-box .lines-num').click(function () {
+            if ($(this).attr('id')) {
+                window.location.href = '#' + $(this).attr('id');
+            }
+        });
+
+        $(window).on('hashchange', function (e) {
+            $('.diff-file-box .lines-code.active').removeClass('active');
+            var m = window.location.hash.match(/^#diff-.+$/);
+            if (m) {
+                $(m[0]).siblings('.lines-code').addClass('active');
+            }
+        }).trigger('hashchange');
     }
 
     // Quick start and repository home
@@ -1141,7 +1164,7 @@ function searchRepositories() {
                 if (response.ok && response.data.length) {
                     var html = '';
                     $.each(response.data, function (i, item) {
-                        html += '<div class="item"><i class="icon octicon octicon-repo"></i> <span class="fullname">' + item.full_name + '</span></div>';
+                        html += '<div class="item"><i class="octicon octicon-repo"></i> <span class="fullname">' + item.full_name + '</span></div>';
                     });
                     $results.html(html);
                     $this.find('.results .item').click(function () {
