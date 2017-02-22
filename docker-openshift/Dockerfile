@@ -14,6 +14,9 @@ RUN chmod -R 775 /app/gogs/ \
     && chown -R git:git /data /app/gogs  \
     && chmod 0755 /data 
 
+ENV SOCAT_LINK false
+ENV RUN_CROND false
+    
 # Set user
 USER git
 
