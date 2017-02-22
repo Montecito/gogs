@@ -11,6 +11,7 @@ COPY ./docker/s6/ /app/gogs/docker/s6/
 RUN chmod -R 775 /app/gogs/ \
     && chown -R git:git /app/gogs/  \
     && ln -sf /data/git /home/git  \
+    && ln -sf /data/git/.s6-svscan /app/gogs/docker/s6/.s6-svscan  \
     && chown -R git:git /data /app/gogs  \
     && chmod 0755 /data 
 
