@@ -22,6 +22,8 @@ ENV HOME /home/git
     
 # Set user
 USER git
+# Overwrite WORKDIR
+WORKDIR /app/gogs/docker/s6/
 
 # Configure Docker Container
 VOLUME ["/data"]
