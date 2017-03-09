@@ -38,7 +38,8 @@ create_volume_subfolder() {
     done
     if ! test -d $HOME/.s6-svscan; then
         mkdir -p $HOME/.s6-svscan
-        cp -r /app/gogs/docker/s6/.s6-svscan.org $HOME/.s6-svscan
+        cp -r /app/gogs/docker/s6/.s6-svscan.org/* $HOME/.s6-svscan/
+        #ln -s /app/gogs/docker/s6/.s6-svscan.org/finish 
     fi
     #
 }
